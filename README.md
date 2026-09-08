@@ -85,12 +85,17 @@ python ../../scripts/vcd_checker.py waveform.vcd \
 When the agent loads `SKILL.md` it gets the full standard workflow:
 
 1. Detect tools (`scripts/env_detect.py`).
-2. Read the design + testbench; ensure `$dumpfile`/`$dumpvars` exist.
-3. Pick a template from `templates/` and adapt signals to the design.
-4. Generate bulk vectors when requested (`scripts/gen_testbench.py`).
-5. Compile → run → auto-validate (`scripts/run_sim.sh`, `scripts/vcd_checker.py`).
-6. Open GTKWave and give the user exact drag instructions.
-7. Report a case-by-case table with ✅/❌ and a pass/fail summary.
+2. Read the source files; derive the interface and expected behavior, keeping a
+   suspect list of likely bug spots.
+3. Write/complete the testbench **from the source** (templates, or the
+   generator for 100+ cases).
+4. Compile → simulate → read ALL output: errors, `$display` results, warnings,
+   exit code, `x`/`z` propagation (use `scripts/vcd_checker.py` for a timeline).
+5. Localize the bug, fix the **source files**, re-run the SAME testbench and
+   diff the logs until the design passes.
+6. Open GTKWave for visual confirmation when needed.
+7. Report: errors with line numbers, root cause, the fix, before/after re-run,
+   and a case-by-case ✅/❌ table.
 
 ## Repository layout
 

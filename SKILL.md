@@ -1,165 +1,164 @@
 ---
 name: verilog-sim
 description: >-
-  Verilog module simulation, waveform generation and automated verification.
-  Uses Icarus Verilog (iverilog) + GTKWave, supports self-checking testbenches,
-  bulk test-vector generation (100+ cases), automatic VCD validation and
-  cross-platform tool detection. Suitable for ALUs, counters, FSMs, datapaths
-  and any synthesizable/behavioral Verilog design.
+  Verilog project simulation & debug loop. Analysis-driven testbench authoring,
+  Icarus Verilog (iverilog) compilation and simulation, reading simulation
+  output and error messages, localizing bugs in the RTL source, fixing the
+  source files and re-running until the design passes. Works for ALUs,
+  counters, FSMs, datapaths and any synthesizable/behavioral Verilog design.
 ---
 
-# verilog-sim — Simulation & Verification Skill
+# verilog-sim — Simulation & Debug Skill
 
-Simulate and verify **any** Verilog module with Icarus Verilog (iverilog),
-produce VCD/FST waveforms for GTKWave, and get case-by-case, machine-checked
-pass/fail results. The skill is design-agnostic: never assume fixed signal
-names (A, B, Sel, F, ...) — **discover** them from the actual code.
+The user hands you **Verilog source files** (possibly with bugs) and wants them
+simulated and made to work. The core loop of this skill is:
+
+```
+read source files
+    → derive the interface + expected behavior
+    → write / complete a testbench for it
+    → compile & simulate (iverilog/vvp)
+    → read the simulation output + error messages (and waveform if needed)
+    → localize the bug, modify the SOURCE files
+    → re-run the SAME testbench
+    → repeat until the design passes
+```
+
+The deliverable is a **fixed source + evidence** (passing simulation, clean
+output, a case-by-case report). Waveforms and verification tables are tools
+serving that loop, not the goal itself.
 
 > Skill base directory: all `scripts/`, `templates/`, `examples/` paths below
 > are relative to the directory containing this SKILL.md. Resolve them against
-> that directory before use.
+> that directory before use. Never assume fixed signal names (A, B, Sel, F,
+> ...) — discover the interface from the actual code.
 
 ---
 
-## 1. Tool detection (first step, always)
+## 1. Tool detection (always first)
 
-Never hardcode tool paths. Ask the environment or run the detector:
+Never hardcode tool paths — detect them:
 
 ```bash
 python3 scripts/env_detect.py            # prints tools as JSON (path + version)
 ```
 
-The detector checks (in order): PATH → MSYS2/Cygwin (Windows) → Homebrew
-(macOS) → common distro install dirs (Linux) → conda. If a tool is missing,
-it prints install hints for the detected platform, e.g.:
+It checks PATH → MSYS2/Cygwin (Windows) → Homebrew (macOS) → distro dirs
+(Linux) → conda, and prints install hints for the detected platform
+(`apt install iverilog`, `pacman -S ...iverilog`, `brew install icarus-verilog`,
+...). If Python is unavailable, fall back to `command -v iverilog`.
 
-- Debian/Ubuntu: `sudo apt install iverilog gtkwave`
-- Fedora: `sudo dnf install iverilog gtkwave`
-- Arch: `sudo pacman -S iverilog gtkwave`
-- MSYS2: `PATH="/usr/bin:$PATH" pacman -S --noconfirm mingw-w64-ucrt-x86_64-iverilog mingw-w64-ucrt-x86_64-gtkwave`
-- macOS: `brew install icarus-verilog gtkwave`
-
-If the detector cannot run (no Python), fall back to `command -v iverilog`
-(Unix) / `where iverilog` (Windows) plus the same lookup order.
-
-**Working directory**: use a scratch dir under the user's project (e.g.
+**Working directory**: a scratch dir under the user's project (e.g.
 `<project>/sim_work/`) or the OS temp dir — never a machine-specific absolute
-path baked into the skill.
+path.
 
 ---
 
-## 2. Analyze the design
+## 2. Read and understand the source files
 
-Read every provided `.v` file (sources + testbench) before touching anything:
+Read ALL provided `.v` files completely before writing anything. For each
+module determine:
 
-- module names, port lists, parameterization (`parameter`, `#(...)`),
-- instantiation hierarchy (top → submodules) for dump depth,
-- clock/reset/active-edge conventions (never guess: check `always @(posedge ...)`),
-- bit widths and signedness of the signals you plan to check,
-- existing `$dumpfile`/`$dumpvars`/`$monitor` in the testbench.
+- **Interface**: module name, port list, widths, parameterization, signedness.
+- **Behavior**: combinational or sequential; clock/reset edges & polarity;
+  what each module is supposed to compute / sequence.
+- **Hierarchy**: top module, instantiation names (needed for dump depth and
+  waveform paths).
+- **Existing testbench**: what it covers, whether it dumps a waveform, whether
+  it self-checks.
 
-Discover the **interface contract** of the DUT so the testbench can drive it:
-- inputs to drive, outputs to observe,
-- combinational vs sequential (does the result settle after `#delay` or after a
-  clock edge?),
-- active-low resets / inverted control signals — read the code, do not assume.
+While reading, keep a short **suspect list** — the places most likely to hide a
+bug (see §6 for the taxonomy): width/sign mismatches, wrong port connections,
+uninitialized state, missing reset, off-by-one in counters, bit-ordering in
+concatenations, truncating arithmetic, always blocks without `*` or missing
+sensitivity edges, `x`/`z` leaking from uninitialized signals.
+
+Example suspect checks to do by inspection:
+
+| Check | Why it matters |
+|-------|----------------|
+| `a + b` where result feeds a narrower reg | truncation loses carry |
+| `always @(a or b)` on a multi-bit expression | incomplete sensitivity list |
+| reg used before assignment | undefined `x` at t=0 |
+| counter/FSM without reset | starts in unknown state |
+| busy-loop/`while` without `#delay` | simulation hangs |
+| port widths differ from declarations | silent truncation/zero-extension |
 
 ---
 
-## 3. Build the testbench with self-checking (default)
+## 3. Write / complete the testbench (derived from the source)
 
-A testbench must verify itself and exit non-zero on failure. Template:
-`templates/tb_comb.v` (combinational), `templates/tb_seq.v` (clocked),
-`templates/tb_fsm.v` (FSM), `templates/tb_counter.v` (counters).
+The testbench is **derived from the source**, not from the templates blindly:
 
-Core pattern (adapt signal names to the DUT):
+1. **Drive signals**: each input of the DUT — what sequence exercises its
+   contract (reset, enable, opcode, data...). Read the RTL to learn reset
+   polarity and active edges — never guess.
+2. **Expected results**: compute them independently — a reference model
+   (Verilog `function`/`task` mirroring the spec), a truth table, or an
+   assertion. This is what turns "仿真结果" into "通过/失败".
+3. **Choose a template** from `templates/` matching the design shape:
+   - `tb_comb.v` — combinational DUTs,
+   - `tb_seq.v` / `tb_counter.v` — clocked designs and counters,
+   - `tb_fsm.v` — state machines.
+   Adapt the signal names to the actual ports (TODO markers show where).
+4. **Always self-check** and exit non-zero on failure:
 
 ```verilog
-module tb;
-  reg  [W-1:0] a, b;
-  reg  [S-1:0] sel;
-  wire [W-1:0] f;
-  integer fail = 0;
-
-  task check; // one test case
-    input [W-1:0] exp;
-    begin
-      #1;                                   // let combinational logic settle
-      if (f !== exp) begin
-        $display("FAIL #%0d: a=%h b=%h sel=%h got=%h exp=%h",
-                 $time, a, b, sel, f, exp);
-        fail = fail + 1;
-      end else begin
-        $display("PASS #%0d: a=%h b=%h sel=%h -> %h", $time, a, b, sel, f);
-      end
+task check;                      // combinational: settle then compare
+  input [W-1:0] exp;
+  begin
+    #1;
+    if (f !== exp) begin
+      $display("FAIL #%0t: a=%h b=%h sel=%h got=%h exp=%h", $time, a, b, sel, f, exp);
+      fail = fail + 1;
+    end else begin
+      $display("PASS #%0t: a=%h b=%h sel=%h -> %h", $time, a, b, sel, f);
     end
-  endtask
-
-  initial begin
-    $dumpfile("waveform.vcd");
-    $dumpvars(0, tb);
-    // stimulus + checks ...
-    if (fail == 0) $display("TEST PASSED");
-    else           $fatal(1, "TEST FAILED: %0d case(s)", fail);
   end
-endmodule
+endtask
+// ...
+if (fail == 0) $display("TEST PASSED");
+else           $fatal(1, "TEST FAILED: %0d case(s)", fail);
 ```
 
-Notes:
+   Use `!==` (case inequality) so `x`/`z` are caught, not hidden. Sequential
+   designs: drive inputs **mid-cycle** (not at the clock edge) and sample after
+   the update edge — the `cycle()`/`step()` patterns in the templates are the
+   race-free way.
 
-- Compare with `!==`/`!==` (case inequality) so `x`/`z` are caught, not hidden.
-- On sequential DUTs, apply stimulus, then wait for the relevant clock edge or
-  `@(negedge clk)` before `check`.
-- Use `$fatal` with non-zero code (or `$stop`) so `vvp` returns an error exit
-  code — this is what makes CI and the scripts trustworthy.
-- Keep one `FAIL` line per case: the VCD checker and users need stable tags.
+5. **Waveform output** (needed for debugging): if absent, insert at the front
+   of the `initial` block:
 
-Defaults inside this skill:
+```verilog
+initial begin
+  $dumpfile("waveform.vcd");
+  $dumpvars(0, tb);              // whole hierarchy; use $dumpvars(0, dut) to trim
+end
+```
 
-- `$dumpfile("waveform.vcd")` (+ FST when using Verilator trace),
-- `$dumpvars(0, <tb_top>)` records the whole hierarchy; for deep hierarchies
-  use `$dumpvars(0, dut)` to trim the file size.
+6. **Bulk cases** (100+ vectors, every op ≥ N cases): use
+   `scripts/gen_testbench.py` with a `spec.json` (inputs/outputs widths + ops +
+   reference expressions) instead of hand-writing:
+
+```bash
+python3 scripts/gen_testbench.py --spec spec.json --workdir sim_work --out tb_gen.v
+```
+
+   Coverage patterns it guarantees: boundaries (0, 1, max-1, max), carry/borrow
+   (max+max, 0-min), zero results, negative results (A<B).
 
 ---
 
-## 4. Bulk test vectors (100+ cases)
-
-When the user asks for many cases (e.g. "每种运算不低于 N 条", "100+ cases"),
-use `scripts/gen_testbench.py` instead of hand-writing stimulus:
+## 4. Compile
 
 ```bash
-python3 scripts/gen_testbench.py \
-  --template templates/tb_comb.v \
-  --out tb_auto.v \
-  --width 4 --ops 6 --cases-per-op 18 \
-  --dut signals.json
+iverilog -g2012 -s <top_module> -o sim.vvp <sources...> <tb.v>
 ```
 
-What the generator guarantees (configurable):
-
-- boundary values (0, 1, max-1, max),
-- carry/borrow scenarios (max+max, 0-min, ...),
-- zero-result cases (x^x, x&0, x-x, ...),
-- negative results (subtraction A < B),
-- arbitrary Python reference model per op (delta between HDL result and
-  reference is reported case by case).
-
-If the generator's assumptions do not fit the DUT, write the stimulus manually
-but keep the same `check`/`fail` pattern above.
-
----
-
-## 5. Compile
+Or one command with detection, build, run and optional VCD check:
 
 ```bash
-iverilog -g2012 -s tb -o sim.vvp <sources...> <tb.v>
-```
-
-Or, when the testbench is self-checking and paths are messy:
-
-```bash
-bash scripts/run_sim.sh <dut1.v> <dut2.v> <tb.v>
-# == env_detect + compile + run + (optional) vcd checker ==
+bash scripts/run_sim.sh -d sim_work <dut1.v> <dut2.v> <tb.v> --check
 ```
 
 Quote every path that may contain spaces or non-ASCII characters.
@@ -169,105 +168,127 @@ Quote every path that may contain spaces or non-ASCII characters.
 | Symptom | Cause / fix |
 |---------|-------------|
 | `Unknown module type: x` | missing/changed module name, wrong source order, missing `-I` include dir |
-| `port ... connected to ... has width X but ... width Y` | width mismatch: pad/truncate or fix the declaration |
-| `v ... is not a constant` | used a variable where a parameter/constant was expected |
-| `can't open input file` | path broken by spaces/unquoted quoting; re-quote |
-| `reference to x is not a constant` / `Expected constant` | parameter arithmetic issue, check `localparam` |
-| multidim/`reg [3:0] [3:0]` loops | use `$readmemh` or `genvar` correctly; template available |
+| `port ... width X but width Y` | width mismatch: pad/truncate or fix the declaration |
+| `v ... is not a constant` | variable used where a constant was expected |
+| `reference to x is not a constant` | parameter arithmetic issue, use `localparam` |
+| `Syntax error in variable list` | an identifier shadows a keyword (`ref`, `step`, `wait`...) |
+| `can't open input file` | path broken by spaces/quotes; re-quote |
+
+On compile errors: report the **exact line number and the root cause**, then
+fix the **source file** and re-compile before touching the testbench.
 
 ---
 
-## 6. Run
+## 5. Simulate and READ the results (gather all diagnostics)
 
 ```bash
 vvp sim.vvp
 ```
 
-Success criteria: `TEST PASSED` (or zero FAIL lines), `$finish`/`$fatal`
-triggered, exit code 0 on pass / non-zero on fail. If the run hangs, check the
-`#` delays in the testbench and the reset sequence (clocked designs need a
-proper release of reset before checks).
+Capture and classify EVERYTHING:
+
+| Message / state | Meaning | Look at |
+|-----------------|---------|---------|
+| compile/runtime error | syntax or elaboration problem | line number, fix source |
+| `x` values in `$display` output | uninitialized signal / unconnected port | find first `x` in time, trace back |
+| `$fatal` / `TEST FAILED` | self-check caught a mismatch | the FAIL lines, then the waveform at that time |
+| never `$finish` / process hangs | missing terminator, busy loop, no `#delay` | add watchdog/timeouts |
+| warnings (`Width mismatch`, truncation...) | latent bugs | each warning = candidate fix |
+| exit code ≠ 0 | something failed | use it for CI/regression |
+
+Save the full stdout (`vvp sim.vvp | tee sim.log`) — you will diff it against
+the re-run after a fix.
+
+When the messages are not enough, open the VCD and interrogate it:
+
+```bash
+python3 scripts/vcd_checker.py waveform.vcd \
+  --signals "A=tb.dut.a,B=tb.dut.b,F=tb.dut.f" --sample 30
+```
+
+to get a compact timeline, or point GTKWave at it (see §8). Look for: the **first
+time** a signal becomes `x`/`z` and what it depended on; a value that changed
+one cycle later than expected; a control signal that never asserted.
 
 ---
 
-## 7. Validate results (two layers)
+## 6. Localize the bug and modify the SOURCE files (the core loop)
 
-**Layer 1 — in-harness:** the testbench already printed PASS/FAIL lines and set
-the exit code. Summarize: total cases, passed, failed; list the FAIL lines.
+Map the observation to a class, then a location, then a minimal fix:
 
-**Layer 2 — independent VCD check** (trust nothing, especially when the
-testbench was user-supplied):
+| Error class | Typical symptom | Root cause | Fix location |
+|-------------|-----------------|------------|--------------|
+| Syntax | compile error at line N | typo, missing `;`, wrong keyword | that line/block |
+| Declaration/width | truncation warnings, carry lost | reg/wire width too narrow, signed mismatch | the declaration, plus a wider temp for arithmetic |
+| Ports/instantiation | values stuck at 0/`x`, wrong bits | port not connected, order swapped, wrong name | the port map of the instance |
+| Combinational logic | wrong truth table on select cases | wrong op, wrong bit order, incomplete sensitivity | the always/case/assign block |
+| Sequential logic | counter off by one, output lags | race at clock edge, missing reset, wrong edge | the clocked block + reset logic |
+| Data interpretation | "result wrong" but actually fine | signed vs unsigned, truncated subtraction | report, or fix if the spec demands |
 
-```bash
-python3 scripts/vcd_checker.py waveform.vcd --config signals.json
+**Rules for modifying:**
+
+1. Fix the **source**, not the testbench — unless the testbench itself is
+   provably wrong (never silently change an expectation to make a test pass;
+   say so explicitly).
+2. Change the **smallest** part that removes the root cause; one fix per
+   iteration, so the effect is observable.
+3. After each fix: **re-run the same testbench**, compare `sim.log` against the
+   previous run (previous errors gone, no new warnings, PASS count up / FAIL
+   count down).
+4. Keep the failing case in the regression set.
+
+Example of a documented fix report:
+
+```
+ERROR: tb.dut count stops at 13 instead of 15 (counter.v:18)
+ROOT CAUSE: `count <= count + 1'b1` — rst_n released at the same edge as en
+  was driven (testbench race at counter.v:44), so the DUT saw one extra clock.
+FIX: drive `en` mid-cycle (after @(negedge clk)); no source change needed.
+RE-RUN: same tb -> TEST PASSED (was: 7 FAIL).
 ```
 
-`signals.json` maps checker names → hierarchical VCD identifiers, e.g.:
+---
 
-```json
-{
-  "signals": {"A": "tb.dut.u_alu.A", "B": "tb.dut.u_alu.B",
-              "Sel": "tb.dut.u_alu.Sel", "F": "tb.dut.u_alu.F",
-              "Cn_4": "tb.dut.u_alu.Cn_4"},
-  "expected": "expected.csv",      // optional: time,<sig>=<value> rows
-  "report": "report.md"            // optional output table
-}
-```
+## 7. Re-run until green — report
 
-The checker asserts each value-change and prints a case table; it exits
-non-zero when anything mismatches. Use this when the testbench has no
-self-check, or when the user asks for "逐条验证".
+Iterate until the design passes (or report precisely what remains). Then
+present the result as a **debug report**:
 
-Report format for the user:
-
-| # | A | B | Sel | F | Cn_4 | 期望结果 | 比对 |
-|---|----|----|-----|----|------|----------|------|
-| 1 | 15 | 15 | 000 | 14 | 1 | 15+15=30 → F=14, C=1 | ✅ |
+1. What the source files contained and what was wrong (each issue: file, line,
+   symptom).
+2. What you changed (or that the problem was in the testbench) and why.
+3. Simulation evidence: `TEST PASSED`, total/all cases in a table:
+   | # | A | B | Sel | F | Cn_4 | 期望 | 比对 |
+   |---|----|----|-----|----|------|------|
+   | 1 | 15 | 15 | 000 | 14 | 1 | 15+15=30 → F=14, C=1 | ✅ |
+4. Any remaining limitations or warnings.
 
 ---
 
 ## 8. Waveforms (GTKWave)
 
-Open the VCD/FST:
+When a fix needs visual confirmation or the user asks:
 
 ```bash
-bash scripts/gtkwave_open.sh waveform.vcd        # cross-platform launcher
-# Windows fallback: start "" "<gtkwave>" waveform.vcd
+bash scripts/gtkwave_open.sh waveform.vcd     # cross-platform launcher
 ```
 
-Instruct the user:
-1. **SST** (left panel): expand the module tree to the DUT instance.
-2. Drag signals into the **Signals** pane.
-3. Click **Zoom Fit** to see the whole run; use `Zoom to Cursor` for details.
-
-Optional batch render to PNG (docs/READMEs, no GUI):
+Instruct the user: ① SST panel — expand the tree to the DUT instance;
+② drag signals into the Signals pane; ③ Zoom Fit. For reports, a batch render:
 
 ```bash
-gtkwave waveform.vcd -S scripts/wave_to_png.tcl -o wave.png
+gtkwave waveform.vcd -S scripts/wave_to_png.tcl -o wave.png   # best-effort
 ```
 
 ---
 
-## 9. Verification-first debugging loop
-
-If the simulation fails:
-
-1. Reproduce from the first FAIL line; zoom the waveform at that timestamp.
-2. Classify: logic error vs. testbench error vs. interpretation error
-   (signed vs unsigned! e.g. 4-bit `1000` = 8 unsigned or -8 signed).
-3. Fix the **design** when the DUT is wrong, fix the **testbench** when the
-   stimulus/expectation is wrong. Never silently change an expectation to make
-   the test pass — document the decision to the user.
-4. Re-run until green; keep the failing test case in the regression set.
-
----
-
-## 10. Reply style
+## 9. Reply style
 
 - Reply in the **user's language** (follow the user's prompt).
-- Present results as tables; mark each case ✅/❌; end with a pass/fail summary.
-- Report exact file paths and exact commands you ran.
-- On errors: first locate the line + root cause, then propose the fix — and
-  explain the root cause in one sentence before the fix.
-- When the user asks about waveform contents, give explicit drag instructions
-  plus the signal names/paths you dumped.
+- Errors first: exact line number, the message, and the root cause in one
+  sentence — then the fix.
+- Show before/after: what changed in the source (file + line), and the re-run
+  output proving it.
+- Results in tables with ✅/❌ and a pass/fail summary.
+- When the user asks about waveform contents, give explicit signal paths and
+  drag instructions.

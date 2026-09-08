@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+- 明确核心定位为「仿真-调试闭环」：读源文件 → 推导接口/行为 → 编写/补全 testbench → 仿真 → 读取全部输出与报错 → 定位并修改源文件 → 同名 tb 复跑直至通过；SKILL.md 与 README 工作流同步重写。
+- SKILL.md 新增：从源文件推导 testbench 的推理步骤、仿真诊断信息收集表（`$display`/`$fatal`/warning/`x`/`z`/挂起/退出码）、错误分类与最小化修改规则、修复报告格式。
+
 ### Added
 - 开源仓库脚手架：MIT License、.gitignore、README、CONTRIBUTING、CHANGELOG、docs/。
 - 跨平台工具探测脚本 `scripts/env_detect.py`（Windows/MSYS2/Cygwin、Linux distro、macOS/Homebrew、conda）。
