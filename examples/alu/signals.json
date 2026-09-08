@@ -1,0 +1,9 @@
+{
+  "signals": {
+    "A":    "tb_gen.dut.a",
+    "B":    "tb_gen.dut.b",
+    "Sel":  "tb_gen.dut.sel",
+    "F":    "tb_gen.dut.f",
+    "Cn_4": "tb_gen.dut.cn_4"
+  }
+}

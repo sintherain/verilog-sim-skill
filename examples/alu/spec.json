@@ -1,0 +1,16 @@
+{
+  "module": "alu",
+  "inputs":  {"a": 4, "b": 4, "sel": 3},
+  "outputs": {"f": 4, "cn_4": 1},
+  "ops": [
+    {"name": "add",  "sel": 0, "outputs": {"f": "(a + b) & mask", "cn_4": "(a + b) > mask"}},
+    {"name": "sub",  "sel": 1, "outputs": {"f": "(a - b) & mask", "cn_4": "a < b"}},
+    {"name": "and",  "sel": 2, "outputs": {"f": "a & b",          "cn_4": "0"}},
+    {"name": "or",   "sel": 3, "outputs": {"f": "a | b",          "cn_4": "0"}},
+    {"name": "xor",  "sel": 4, "outputs": {"f": "a ^ b",          "cn_4": "0"}},
+    {"name": "nand", "sel": 5, "outputs": {"f": "~(a & b) & mask", "cn_4": "0"}}
+  ],
+  "cases_per_op": 18,
+  "delay": 1,
+  "seed": 42
+}

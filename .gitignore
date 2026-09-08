@@ -1,0 +1,35 @@
+# ---- Simulation artifacts (never commit generated outputs) ----
+*.vvp
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+*.out
+*.mem
+work/
+sim_work/
+result/
+*.gtkw
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node / JS (in case templates or tooling use it) ----
+node_modules/
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- Misc ----
+*.log
