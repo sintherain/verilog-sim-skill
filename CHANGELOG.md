@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+- docs/troubleshooting.md 重写为「报错参考库」（约 40 条）：按 parse/语义/warning/运行时四阶段组织，每条含可 grep 关键词、根因、修法、来源；含 Verilator 编号报错节与自检信号节。
+- docs/references.md：报错参考库来源清单（官方/教程/经验库/练习集），含来源使用约定。
+- SKILL.md 编译节挂接参考库引用。
+
 ### Changed
 - 明确核心定位为「仿真-调试闭环」：读源文件 → 推导接口/行为 → 编写/补全 testbench → 仿真 → 读取全部输出与报错 → 定位并修改源文件 → 同名 tb 复跑直至通过；SKILL.md 与 README 工作流同步重写。
 - SKILL.md 新增：从源文件推导 testbench 的推理步骤、仿真诊断信息收集表（`$display`/`$fatal`/warning/`x`/`z`/挂起/退出码）、错误分类与最小化修改规则、修复报告格式。

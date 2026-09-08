@@ -177,6 +177,10 @@ Quote every path that may contain spaces or non-ASCII characters.
 On compile errors: report the **exact line number and the root cause**, then
 fix the **source file** and re-compile before touching the testbench.
 
+> Full message-to-fix mapping (4-stage taxonomy, ~40 entries with sources):
+> docs/troubleshooting.md (syntax → semantics → warnings → runtime) and its
+> source list in docs/references.md.
+
 ---
 
 ## 5. Simulate and READ the results (gather all diagnostics)
