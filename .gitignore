@@ -33,3 +33,7 @@ Thumbs.db
 
 # ---- Misc ----
 *.log
+
+# ---- Local backups / tooling artifacts ----
+*.bak
+readmex_output/
