@@ -13,13 +13,15 @@ WORK="."
 CHECK=0
 FILES=()
 
-usage() { echo "usage: run_sim.sh [-d workdir] [--check] <file...> (SIM_TOP=tb)"; }
+usage() { echo "usage: run_sim.sh [-d workdir] [--check] [--errmap] <file...> (SIM_TOP=tb)"; }
 PY="${PY:-$(command -v python3 || command -v python || echo python3)}"
+ERRMAP=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -d) WORK="$2"; shift 2 ;;
     --check) CHECK=1; shift ;;
+    --errmap) ERRMAP=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) FILES+=("$1"); shift ;;
   esac
@@ -72,11 +74,23 @@ fi
 
 SIM_TOP="${SIM_TOP:-tb}"
 echo "== [1/3] compile (top=$SIM_TOP) =="
-"$IVERILOG" -g2012 -s "$SIM_TOP" -o sim.vvp "${FILES[@]}"
+if ! "$IVERILOG" -g2012 -s "$SIM_TOP" -o sim.vvp "${FILES[@]}" 2> build.log; then
+  echo "!! compilation failed" >&2
+  sed 's/^/    /' build.log >&2
+  if [ "$ERRMAP" = 1 ]; then
+    echo "?? error analysis (scripts/errmap.py):" >&2
+    "$PY" "$HERE/errmap.py" --log build.log >&2 || true
+  fi
+  exit 4
+fi
 
 echo "== [2/3] simulate =="
-"$VVP" sim.vvp
-STATUS=$?
+"$VVP" sim.vvp | tee sim.log
+STATUS=${PIPESTATUS[0]}
+if [ "$STATUS" -ne 0 ] && [ "$ERRMAP" = 1 ] && [ -f sim.log ]; then
+  echo "?? error analysis (scripts/errmap.py):" >&2
+  "$PY" "$HERE/errmap.py" --log sim.log >&2 || true
+fi
 
 if [ "$CHECK" = 1 ]; then
   if [ -f waveform.vcd ]; then

@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Added
+- examples/buggy/ 带 BUG 案例集（undef_module / width_truncation / latch_inferred / tb_race_counter）：每案例含 bug 版 + 正确 tb + 修复版，CI 双断言（bug 版必败、修复版必过）。
+- scripts/errmap.py + errmap.json：报错输出 → 参考库条目匹配（根因/修法/来源/复现路径），自带 --selftest（15 条全部自洽）；多编码日志读取（UTF-8/UTF-16/GBK）。
+- scripts/run_sim.sh 集成 --errmap：编译或仿真失败时自动输出参考库建议。
+
+### Fixed
+- 时序测试基准里发现并记录新增关键字陷阱：`expect` 为 SystemVerilog 关键字（与 `ref` 同型），重命名为 exp_cnt；案例注释统一英文，规避写入链路的编码损坏。
+
+### Added
 - docs/troubleshooting.md 重写为「报错参考库」（约 40 条）：按 parse/语义/warning/运行时四阶段组织，每条含可 grep 关键词、根因、修法、来源；含 Verilator 编号报错节与自检信号节。
 - docs/references.md：报错参考库来源清单（官方/教程/经验库/练习集），含来源使用约定。
 - SKILL.md 编译节挂接参考库引用。

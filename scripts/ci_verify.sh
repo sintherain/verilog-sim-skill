@@ -15,8 +15,9 @@ IV="$(command -v iverilog || echo iverilog)"
 echo "using python: $PY"
 echo "using iverilog: $IV"
 
-echo "== [0] python scripts compile =="
+echo "== [0] python scripts compile + errmap selftest =="
 $PY -m py_compile scripts/*.py
+$PY scripts/errmap.py --selftest
 
 echo "== [1] alu: generator -> compile -> simulate -> vcd check =="
 W="examples/alu/sim_work"
@@ -53,6 +54,42 @@ echo "== [4] seq =="
   vvp sim.vvp | tee sim.log
   grep -q "TEST PASSED" sim.log
 )
+
+echo "== [5] buggy regression (bug versions must fail, fixed must pass) =="
+B="examples/buggy"
+
+# undef_module: compile MUST fail with the expected message
+(
+  cd "$B/undef_module"
+  if iverilog -g2012 -s tb -o sim.vvp design.v tb.v 2> compile.log; then
+    echo "!! undef_module: expected compile failure, got success"; exit 1
+  fi
+  grep -qi "Unknown module type" compile.log || { echo "!! undef_module: expected message not found"; exit 1; }
+  iverilog -g2012 -s tb -o sim_fixed.vvp design_fixed.v tb.v
+  vvp sim_fixed.vvp | tee sim_fixed.log
+  grep -q "TEST PASSED" sim_fixed.log
+)
+
+# width_truncation / latch_inferred / tb_race_counter:
+# bug version must NOT print TEST PASSED; fixed version must print it.
+for case in "width_truncation:design.v:design_fixed.v" \
+            "latch_inferred:design.v:design_fixed.v" \
+            "tb_race_counter:counter.v+tb.v:counter.v+tb_fixed.v"; do
+  dir="${case%%:*}"; rest="${case#*:}"
+  bug_files="${rest%%:*}"; fixed_files="${rest#*:}"
+  (
+    cd "$B/$dir"
+    # shellcheck disable=SC2086
+    iverilog -g2012 -s tb -o sim.vvp $bug_files
+    if vvp sim.vvp 2>&1 | tee sim.log | grep -q "TEST PASSED"; then
+      echo "!! $dir: bug version passed unexpectedly"; exit 1
+    fi
+    # shellcheck disable=SC2086
+    iverilog -g2012 -s tb -o sim_fixed.vvp $fixed_files
+    vvp sim_fixed.vvp | tee sim_fixed.log
+    grep -q "TEST PASSED" sim_fixed.log
+  )
+done
 
 echo ""
 echo "ALL CHECKS PASSED ✅"

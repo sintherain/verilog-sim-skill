@@ -1,0 +1,144 @@
+{
+  "about": "Error pattern -> root cause / fix reference for the verilog-sim skill. Entries are matched case-insensitively against iverilog/vvp/verilator output. Source tag S = docs/troubleshooting.md section.",
+  "entries": [
+    {
+      "id": "unknown-module-type",
+      "stage": "semantics",
+      "patterns": ["Unknown module type", "These modules were missing"],
+      "root_cause": "The instantiated module is never defined: mistyped module name, wrong file order (file not compiled), or a -s top module that does not match the hierarchy.",
+      "fix": "Check the module name in the definition vs. the instance; add the defining file to the compile command; compile with the correct -s top.",
+      "source": "S2",
+      "example": "examples/buggy/undef_module",
+      "sample_error": "design.v:13: error: Unknown module type: sub_modulee\n2 error(s) during elaboration."
+    },
+    {
+      "id": "keyword-collision",
+      "stage": "syntax",
+      "patterns": ["Syntax error in variable list", "syntax error in variable"],
+      "root_cause": "A signal name collides with a (System)Verilog keyword: ref, expect, step, wait, always, ... The parser rejects the declaration and reports both the declaration line and line 1.",
+      "fix": "Rename the signal (ref_cnt, exp_cnt, ...). See examples/buggy/tb_race_counter notes; we hit this with 'ref' and 'expect'.",
+      "source": "S1, CHANGELOG",
+      "example": "examples/buggy/tb_race_counter",
+      "sample_error": "tb.v:20: syntax error\ntb.v:1: error: Syntax error in variable list."
+    },
+    {
+      "id": "syntax-error",
+      "stage": "syntax",
+      "patterns": ["syntax error near", "error: syntax error", "parse error"],
+      "root_cause": "Grammar problem: missing semicolon, unbalanced begin/end or parentheses, or SystemVerilog constructs used while compiling in Verilog-2001 mode.",
+      "fix": "Report the exact line; fix the statement or add -g2012. Check for full-width punctuation pasted from editors.",
+      "source": "S1",
+      "sample_error": "tb.v:12: syntax error near 'endmodule'"
+    },
+    {
+      "id": "unable-to-bind",
+      "stage": "semantics",
+      "patterns": ["Unable to bind wire/reg/memory"],
+      "root_cause": "Signal used but never declared; iverilog does not create implicit nets in every context.",
+      "fix": "Declare the signal explicitly in the module; compile with -Wall to catch implicit nets early.",
+      "source": "S2",
+      "sample_error": "error: Unable to bind wire/reg/memory 'foo' in 'top'"
+    },
+    {
+      "id": "multiple-drivers",
+      "stage": "semantics",
+      "patterns": ["has multiple drivers", "Multiple drivers"],
+      "root_cause": "A wire is driven by more than one continuous assignment or port.",
+      "fix": "Keep one driver; use reg + procedural block, or rename the other net.",
+      "source": "S2",
+      "sample_error": "error: net 'a' has multiple drivers"
+    },
+    {
+      "id": "not-a-constant",
+      "stage": "semantics",
+      "patterns": ["is not a constant", "not a constant"],
+      "root_cause": "A variable was used where a constant/parameter is required (width, array size, generate condition).",
+      "fix": "Use localparam/parameter; runtime values cannot size static constructs.",
+      "source": "S2",
+      "sample_error": "error: reference to 'N' is not a constant"
+    },
+    {
+      "id": "width-mismatch",
+      "stage": "warning",
+      "patterns": ["width mismatch", "truncating", "Width mismatch"],
+      "root_cause": "Port/net widths differ; high bits silently truncated or zero-extended.",
+      "fix": "Pad deliberately ({1'b0, a}) or fix the declaration; note that a 32-bit integer literal (15) widens the whole expression while 4'hF does not.",
+      "source": "S3, examples/buggy/width_truncation",
+      "example": "examples/buggy/width_truncation",
+      "sample_error": "warning: width mismatch: port 'y' has width 4 but connected to width 8"
+    },
+    {
+      "id": "timescale-warning",
+      "stage": "warning",
+      "patterns": ["no timescale", "timescale declared", "timescale mismatch"],
+      "root_cause": "Missing or inconsistent `timescale between modules: delays are interpreted differently.",
+      "fix": "Put `timescale 1ns/1ps at the top of every file.",
+      "source": "S3",
+      "sample_error": "warning: Some designs have no timescale declared"
+    },
+    {
+      "id": "test-failed",
+      "stage": "runtime/selfcheck",
+      "patterns": ["TEST FAILED", "FATAL:"],
+      "root_cause": "The self-checking testbench found mismatches: FAIL lines carry the inputs, actual and expected values.",
+      "fix": "Read every FAIL line; classify per SKILL.md sec.6 (logic / timing / interpretation); open the waveform at that timestamp. Live cases: width_truncation (silent truncation), latch_inferred (missing else), tb_race_counter (tb sync error).",
+      "source": "S4, SKILL.md sec.6",
+      "example": "examples/buggy/width_truncation",
+      "sample_error": "FAIL a=f b=1 sum=0 carry=0 (exp sum=0 carry=1)\nFATAL: tb.v:39: TEST FAILED: 2 case(s)"
+    },
+    {
+      "id": "infinite-loop",
+      "stage": "runtime",
+      "patterns": ["infinite loop detected"],
+      "root_cause": "Zero-delay combinational loop or a loop with no update (assign a=b; assign b=a;).",
+      "fix": "Break the loop; add an intermediate register or a #delay in the testbench.",
+      "source": "S4",
+      "sample_error": "infinite loop detected at time 0"
+    },
+    {
+      "id": "vcd-signal-not-found",
+      "stage": "workflow",
+      "patterns": ["signal not found in VCD"],
+      "root_cause": "Hierarchical name in signals.json does not match the VCD scope path (e.g. tb_gen.dut.a vs tb.dut.a).",
+      "fix": "Run vcd_checker.py wave.vcd without --signals to list every VCD signal, then fix the config.",
+      "source": "S6",
+      "sample_error": "WARNING: signal not found in VCD: tb.en"
+    },
+    {
+      "id": "verilator-unoptflat",
+      "stage": "verilator",
+      "patterns": ["%Warning-UNOPTFLAT"],
+      "root_cause": "Combinational feedback loop; often an unintended latch or circular dependency.",
+      "fix": "Review combinational logic; break loops with registers.",
+      "source": "S5",
+      "sample_error": "%Warning-UNOPTFLAT: Signal unoptimizable: Feedback loop found"
+    },
+    {
+      "id": "verilator-width",
+      "stage": "verilator",
+      "patterns": ["%Warning-WIDTH"],
+      "root_cause": "Width mismatch (same family as the iverilog width warning).",
+      "fix": "Align widths; see the width-mismatch entry.",
+      "source": "S5",
+      "sample_error": "%Warning-WIDTH: Width mismatch"
+    },
+    {
+      "id": "verilator-pinmissing",
+      "stage": "verilator",
+      "patterns": ["%Warning-PINMISSING"],
+      "root_cause": "Instance port left unconnected.",
+      "fix": "Connect the port or disable the lint check locally.",
+      "source": "S5",
+      "sample_error": "%Warning-PINMISSING: Instance has no port named 'rst_n'"
+    },
+    {
+      "id": "verilator-unsupported",
+      "stage": "verilator",
+      "patterns": ["UNSUPPORTED:", "%Error-UNSUPPORTED"],
+      "root_cause": "Verilator does not support this construct (delays, fork-join, real, ...).",
+      "fix": "Refactor RTL to synthesizable code; run testbenches with iverilog instead.",
+      "source": "S5",
+      "sample_error": "%Error-UNSUPPORTED: Delay statements are unsupported"
+    }
+  ]
+}

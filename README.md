@@ -30,6 +30,12 @@ scripts, so both humans and agents can run it anywhere.
   Windows (MSYS2, Cygwin), Linux (apt/yum/pacman/dnf), macOS (Homebrew) and WSL.
 - **Template library** — combinational / sequential / FSM / counter testbench
   templates that work for any design, not just ALUs.
+- **Error-message mapping** — `scripts/errmap.py` matches simulator output
+  against a curated error library (root cause + fix + source + reproducible
+  example), with a self-test; integrated into `run_sim.sh --errmap`.
+- **Bug corpus** — `examples/buggy/` ships four real bug projects (module-name
+  typo, silent width truncation, inferred latch, testbench sync race); CI
+  asserts the buggy versions fail and the fixed versions pass.
 - **Waveform guidance** — GTKWave signal-drag instructions and optional
   batch-mode waveform rendering for docs and reports.
 
@@ -101,8 +107,9 @@ When the agent loads `SKILL.md` it gets the full standard workflow:
 
 ```text
 scripts/       env_detect.py · run_sim.sh · gen_testbench.py · vcd_checker.py
+               errmap.py · errmap.json · ci_verify.sh · gtkwave_open.sh
 templates/     tb_comb.v · tb_seq.v · tb_fsm.v · tb_counter.v
-examples/      alu/ (flagship) · counter/ · fsm/
+examples/      alu/ (flagship) · counter/ · fsm/ · seq/ · buggy/ (bug corpus)
 docs/          installation.md · troubleshooting.md
 .github/       ci.yml (lints + simulates all examples)
 ```
