@@ -176,6 +176,17 @@ verilog-sim/
 
 本项目**无需任何外部 Python 包**，仅使用标准库。
 
+运行 `scripts/env_detect.py` 会自动检测 iverilog/vvp 是否已安装，缺失时会打印对应平台的安装命令。也可以直接按平台安装 Icarus Verilog（推荐 10.0 或更高版本）：
+
+| 平台 | 安装命令 |
+|---|---|
+| Ubuntu / Debian | `sudo apt install iverilog` |
+| Fedora | `sudo dnf install iverilog` |
+| Arch | `sudo pacman -S iverilog` |
+| macOS (Homebrew) | `brew install icarus-verilog` |
+| Windows (MSYS2) | 在 MSYS2 shell 里：`pacman -S mingw-w64-ucrt-x86_64-iverilog` |
+| Windows (免安装) | 下载 Win32 iverilog 发行版，并把 `iverilog` / `vvp` 加入 PATH |
+
 ### 安装
 
 1. 克隆仓库：
