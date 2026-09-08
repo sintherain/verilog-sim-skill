@@ -72,8 +72,8 @@ B="examples/buggy"
 
 # width_truncation / latch_inferred / tb_race_counter:
 # bug version must NOT print TEST PASSED; fixed version must print it.
-for case in "width_truncation:design.v:design_fixed.v" \
-            "latch_inferred:design.v:design_fixed.v" \
+for case in "width_truncation:design.v+tb.v:design_fixed.v+tb.v" \
+            "latch_inferred:design.v+tb.v:design_fixed.v+tb.v" \
             "tb_race_counter:counter.v+tb.v:counter.v+tb_fixed.v"; do
   dir="${case%%:*}"; rest="${case#*:}"
   bug_files="${rest%%:*}"; fixed_files="${rest#*:}"
