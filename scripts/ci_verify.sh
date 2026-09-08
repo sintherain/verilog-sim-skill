@@ -80,12 +80,12 @@ for case in "width_truncation:design.v:design_fixed.v" \
   (
     cd "$B/$dir"
     # shellcheck disable=SC2086
-    iverilog -g2012 -s tb -o sim.vvp $bug_files
+    iverilog -g2012 -s tb -o sim.vvp ${bug_files//+/ }
     if vvp sim.vvp 2>&1 | tee sim.log | grep -q "TEST PASSED"; then
       echo "!! $dir: bug version passed unexpectedly"; exit 1
     fi
     # shellcheck disable=SC2086
-    iverilog -g2012 -s tb -o sim_fixed.vvp $fixed_files
+    iverilog -g2012 -s tb -o sim_fixed.vvp ${fixed_files//+/ }
     vvp sim_fixed.vvp | tee sim_fixed.log
     grep -q "TEST PASSED" sim_fixed.log
   )
